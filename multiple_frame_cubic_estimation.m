@@ -1,5 +1,6 @@
 function [sum_diff, sum_hess, sum_loss] = multiple_frame_cubic_estimation(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
     % init
+    % load('debug.mat')
     activation_label = (activation_label == 1);
     params = generate_cubic_params(cuboid); 
     theta = params(1);
@@ -64,11 +65,12 @@ function [sum_diff, sum_hess, sum_loss] = multiple_frame_cubic_estimation(cuboid
     pts2d_pos(:,1) = pts2d_pos(:,1) ./ depth_pos; pts2d_pos(:,2) = pts2d_pos(:,2) ./ depth_pos; 
     grad_img = image_grad(depth_map, pts2d_pos); % get image gradient
     diff_pos = interpImg_(depth_map, pts2d_pos(:,1:2)) - depth_pos; loss_pos = sum(diff_pos.^2);
+    grad_x_params_tot = get_3d_pt_gradient(visible_pt_3d(:,1:2), visible_pt_3d(:,3), theta, l, w);
     sum_diff_pos = 0; sum_hess_pos = zeros(sum(activation_label));
     for i = 1 : size(visible_pt_3d, 1)
-        grad_x_params = get_3d_pt_gradient([visible_pt_3d(i,1) visible_pt_3d(i,2)], visible_pt_3d(i,3), activation_label, theta, l, w);
+        grad_x_params = reshape(grad_x_params_tot(:,i,:), [3, 6]);
         grad_pixel = pixel_grad_x(M, pts3d_pos(i, :)'); grad_depth = M(3, 1:3);
-        grad_pos = (grad_depth * grad_x_params - grad_img(i, :) * grad_pixel * grad_x_params)';
+        grad_pos = (grad_depth * grad_x_params(:, activation_label) - grad_img(i, :) * grad_pixel * grad_x_params(:, activation_label))';
         sum_diff_pos = sum_diff_pos + diff_pos(i) * grad_pos';
         sum_hess_pos = sum_hess_pos + grad_pos * grad_pos';
     end
@@ -80,118 +82,110 @@ function grad = pixel_grad_x(M, x)
     gy = M(2, :) / (M(3, :) * x) - M(3, :) * (M(2, :) * x) / (M(3, :) * x)^2; gy = gy(1:3);
     grad = [gx; gy];
 end
-function grad = get_3d_pt_gradient(k, plane_ind, activation_label, theta, l, w)
-    grad = zeros(3, 6);
-    for i = 1 : length(k)
-        if activation_label(1)
-            grad(:, 1) = g_theta(k, plane_ind, theta, l, w);
-        end
-        if activation_label(2)
-            grad(:, 2) = [1 0 0]';
-        end
-        if activation_label(3)
-            grad(:, 3) = [0 1 0]';
-        end
-        if activation_label(4)
-            grad(:, 4) = g_l(k, plane_ind, theta);
-        end
-        if activation_label(5)
-            grad(:, 5) = g_w(k, plane_ind, theta);
-        end
-        if activation_label(6)
-            grad(:, 6) = [0 0 k(2)]';
-        end
-    end
-    grad = grad(:, activation_label);
+function grad = get_3d_pt_gradient(k, plane_ind, theta, l, w)
+    tot_num = length(plane_ind);
+    grad = cat(3, g_theta(k, plane_ind, theta, l, w), repmat([1;0;0], [1, tot_num]), repmat([0;1;0], [1, tot_num]), g_l(k, plane_ind, theta), g_w(k, plane_ind, theta), [zeros(1,tot_num);zeros(1,tot_num);k(:,2)']);
 end
 function gw = g_w(k, plane_ind, theta)
-    if plane_ind == 1
-        gw = [
-            1 / 2 * sin(theta);
-            - 1 / 2 * cos(theta);
-            0
-            ];
-    end
-    if plane_ind == 2
-        gw = [
-            1 / 2 * sin(theta) - k(1) * sin(theta);
-            -1 / 2 * cos(theta) + k(1) * cos(theta);
-            0
-            ];
-    end
-    if plane_ind == 3
-        gw = [
-            -1 / 2 * sin(theta);
-            1 / 2 * cos(theta);
-            0
-            ];
-    end
-    if plane_ind == 4
-        gw = [
-            -1 / 2 * sin(theta) + k(1) * sin(theta);
-            1 / 2 * cos(theta) - k(1) * cos(theta);
-            0;
-            ];
+    gw = zeros(3, length(plane_ind));
+    for cur_pd = 1 : length(plane_ind)
+        selector = (plane_ind == cur_pd);
+        if cur_pd == 1
+            gw(:, selector) = [
+                1 / 2 * sin(theta) * ones(1,sum(selector));
+                - 1 / 2 * cos(theta) * ones(1,sum(selector));
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 2
+            gw(:, selector) = [
+                1 / 2 * sin(theta) - k(selector,1)' * sin(theta);
+                -1 / 2 * cos(theta) + k(selector,1)' * cos(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 3
+            gw(:, selector) = [
+                -1 / 2 * sin(theta) * ones(1,sum(selector));
+                1 / 2 * cos(theta) * ones(1,sum(selector));
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 4
+            gw(:, selector) = [
+                -1 / 2 * sin(theta) + k(selector,1)' * sin(theta);
+                1 / 2 * cos(theta) - k(selector,1)' * cos(theta);
+                zeros(1,sum(selector));
+                ];
+        end
     end
 end
 function gl = g_l(k, plane_ind, theta)
-    if plane_ind == 1
-        gl = [
-            -1 / 2 * cos(theta) +  k(1) * cos(theta);
-            -1 / 2 * sin(theta) +  k(1) * sin(theta);
-            0
-            ];
-    end
-    if plane_ind == 2
-        gl = [
-            1 / 2 * cos(theta);
-            1 / 2 * sin(theta);
-            0
-            ];
-    end
-    if plane_ind == 3
-        gl = [
-            1 / 2 * cos(theta) -  k(1) * cos(theta);
-            1 / 2 * sin(theta) -  k(1) * sin(theta);
-            0
-            ];
-    end
-    if plane_ind == 4
-        gl = [
-            - 1 / 2 * cos(theta);
-            - 1 / 2 * sin(theta);
-            0
-            ];
+    gl = zeros(3, length(plane_ind));
+    for cur_pd = 1 : length(plane_ind)
+        selector = (plane_ind == cur_pd);
+        if cur_pd == 1
+            gl(:, selector) = [
+                -1 / 2 * cos(theta) +  k(selector, 1)' * cos(theta);
+                -1 / 2 * sin(theta) +  k(selector, 1)' * sin(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 2
+            gl(:, selector) = [
+                1 / 2 * cos(theta) * ones(1,sum(selector));
+                1 / 2 * sin(theta) * ones(1,sum(selector));
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 3
+            gl(:, selector) = [
+                1 / 2 * cos(theta) -  k(selector, 1)' * cos(theta);
+                1 / 2 * sin(theta) -  k(selector, 1)' * sin(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 4
+            gl(:, selector) = [
+                - 1 / 2 * cos(theta) * ones(1,sum(selector));
+                - 1 / 2 * sin(theta) * ones(1,sum(selector));
+                zeros(1,sum(selector));
+                ];
+        end
     end
 end
 function gtheta = g_theta(k, plane_ind, theta, l, w)
-    if plane_ind == 1
-        gtheta = [
-            1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k(1) * l * sin(theta);
-            -1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k(1) * l * cos(theta);
-            0
-            ];
-    end
-    if plane_ind == 2
-        gtheta = [
-            -1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k(1) * cos(theta);
-            1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k(1) * sin(theta);
-            0
-            ];
-    end
-    if plane_ind == 3
-        gtheta = [
-            -1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k(1) * l * sin(theta);
-            1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k(1) * l * cos(theta);
-            0
-            ];
-    end
-    if plane_ind == 4
-        gtheta = [
-            1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k(1) * cos(theta);
-            - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k(1) * sin(theta);
-            0
-            ];
+    gtheta = zeros(3, length(plane_ind));
+    for cur_pd = 1 : length(plane_ind)
+        selector = (plane_ind == cur_pd);
+        if cur_pd == 1
+            gtheta(:, selector) = [
+                1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k(selector,1)' * l * sin(theta);
+                -1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k(selector,1)' * l * cos(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 2
+            gtheta(:, selector) = [
+                -1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k(selector,1)' * cos(theta);
+                1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k(selector,1)' * sin(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 3
+            gtheta(:, selector) = [
+                -1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k(selector,1)' * l * sin(theta);
+                1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k(selector,1)' * l * cos(theta);
+                zeros(1,sum(selector));
+                ];
+        end
+        if cur_pd == 4
+            gtheta(:, selector) = [
+                1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k(selector,1)' * cos(theta);
+                - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k(selector,1)' * sin(theta);
+                zeros(1,sum(selector));
+                ];
+        end
     end
 end
 function grad = image_grad(image, location)

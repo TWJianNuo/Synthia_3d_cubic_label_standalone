@@ -1,7 +1,7 @@
 function align_frame(help_info)
+    run_batch(help_info);
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, num_frame, save_path, inter_path] = read_helper_info(help_info, jj);
-        run('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/Matlab_code/vlfeat-0.9.21/toolbox/vl_setup')
         n = num_frame; error_record = zeros(n, 1); thold = 1e-5; % reconstructed_3d_pts_record = cell(n, 1); affine_matrix_record = cell(n, 1);
         exp_re_path = make_dir(); error_recorder1 = zeros(n-1,1); error_recorder2 = zeros(n-1,1); param_record = zeros(n-1, 16);
         % serial_record = zeros(n-1, 1);
@@ -124,6 +124,14 @@ function align_frame(help_info)
         % save(['supplementary_data/' get_current_time_string() '_adjust_matrix.mat'], 'param_record');
         save_adjust_matrix(help_info{jj}, param_record)
     end
+end
+function run_batch(help_info)
+    infos = strsplit(help_info{1}{1},'/');
+    path = zeros(0);
+    for i = 1 : length(infos) - 3
+        path = [path infos{i} '/'];
+    end
+    run([path 'Matlab_code/vlfeat-0.9.21/toolbox/vl_setup']);
 end
 function save_adjust_matrix(helper_entry, param_record)
     sv_path = helper_entry{9};

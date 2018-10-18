@@ -1,4 +1,5 @@
 function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label)
+    % load('debug.mat')
     global sigmoid_m sigmoid_bias
     sigmoid_m = 10; sigmoid_bias = 4;
     ratio = 1.5; activation_label = (activation_label == 1);
