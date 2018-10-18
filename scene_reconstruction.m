@@ -5,9 +5,10 @@ help_info = helper();
 % do_segmentation(help_info);
 % create_rgb_cluster(help_info);
 % union_and_save_all_marks(help_info);
-organize_data_structure_for_multiple_frames(help_info);
-generate_depth_cluster(help_info)
+% organize_data_structure_for_multiple_frames(help_info);
+% generate_depth_cluster(help_info)
 % do_multiple_frame_based_optimization(help_info)
+cubic_shape_setimation_on_multiple_frame(help_info);
 % check_close_obj_effects(help_info);
 function estimate_affine_matrix(helper)
     for i = 1 : length(helper)

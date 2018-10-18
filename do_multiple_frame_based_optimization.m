@@ -22,13 +22,15 @@
 % objs{1}.guess(1:5) = fin_params; cx = objs{1}.guess(1); cy = objs{1}.guess(2); theta = objs{1}.guess(3); l = objs{1}.guess(4); w = objs{1}.guess(5); h = objs{1}.guess(6);
 % objs{1}.cur_cuboid = generate_cuboid_by_center(cx, cy, theta, l, w, h);
 function do_multiple_frame_based_optimization(help_info)
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/17_Oct_2018_12_mul/1_4.mat');
+    % cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind);
     global path_mul
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : max_frame
+        for frame = 1 : 1
             % rgb = grab_rgb_data(frame);
-            save([path_mul num2str(frame) '.mat'])
+            % save([path_mul num2str(frame) '.mat'])
             rgb = grab_rgb_by_mat(frame, help_info{jj});
             [data_cluster, depth_cluster] = read_in_clusters(frame, help_info{jj});
             [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
@@ -107,8 +109,8 @@ function cubic_cluster = multiple_frame_based_optimization(data_cluster, cubic_c
 end 
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
-    save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/15_Oct_2018_09_mul/21_11.mat');
+    % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/17_Oct_2018_12_mul/1_4.mat');
     activation_label = cubic_record_entry.activation_label; depth_cluster = image_blur(depth_cluster);
     sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
@@ -138,15 +140,15 @@ function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, ob
             % save_visualize(cubic_record_entry, objs, i, frame_num, obj_ind);
             cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label, t_objs{1});
             if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-                % break;
+                break;
             end
         else
             break
         end
     end
-    save_visualize(cubic_record_entry, t_objs, it_num, frame_num, obj_ind);
+    % save_visualize(cubic_record_entry, t_objs, it_num, frame_num, obj_ind);
     if ~isempty(t_objs)
-        save_stem(loss_record, frame_num, obj_ind);
+        % save_stem(loss_record, frame_num, obj_ind);
         % figure(1); clf; stem(loss_record,'filled')
     end
 end
@@ -364,18 +366,21 @@ function depth_map = map_one_obj_to_depth_map(depth_map, cur_obj, cur_affine)
     linear_ind = sub2ind(size(depth_map), pts_2d(:,2), pts_2d(:,1));
     depth_map(linear_ind) = depth_vals;
 end
-function [diff, hess, loss] = accum_for_one_obj(cuboid, cur_obj, depth_map, visible_pts, activation_label)
-    tot_pos_num = size(visible_pts, 1); linear_ind = cur_obj.linear_ind; tot_inv_num = size(linear_ind, 1);
+function [diff, hess, loss] = accum_for_one_obj(cuboid, cur_obj, depth_map, visible_pt_3d, activation_label)
+    tot_pos_num = size(visible_pt_3d, 1); linear_ind = cur_obj.linear_ind; tot_inv_num = size(linear_ind, 1);
     linear_ind = down_sample_linear_ind(linear_ind, tot_pos_num);
-    visible_pts = [visible_pts(:, 5) visible_pts(:, 6) visible_pts(:, 4)];
+    visible_pt_3d = [visible_pt_3d(:, 5) visible_pt_3d(:, 6) visible_pt_3d(:, 4)];
     extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
-    [diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
+    %[diff, hess, loss] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label);
+    [diff, hess, loss] = multiple_frame_cubic_estimation(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label);
     % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
 end
 function new_linear_ind = down_sample_linear_ind(org_linear_ind, new_num)
     if length(org_linear_ind) > new_num
         indices = unique(round(linspace(1, length(org_linear_ind), new_num)));
         new_linear_ind = org_linear_ind(indices);
+    else
+        new_linear_ind = org_linear_ind;
     end
 end
 function is_visible_record = get_visible_objs(cuboid, objs)
@@ -403,12 +408,10 @@ function counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, vi
     %}
 end
 function selector = exclude_border_points(visible_pts, obj, image)
-    grad_record = zeros(size(visible_pts,1),2); grad_th = 100; 
+    grad_th = 100; 
     extrinsic = obj.extrinsic_params; intrinsic = obj.intrinsic_params; affine = obj.affine_matrx;
     location = round(project_point_2d(extrinsic, intrinsic, visible_pts(:,1:3), affine));
-    for i = 1 : size(location,1)
-        grad_record(i,:) = abs([interpImg(image, [location(i,1) + 1, location(i,2)]) - interpImg(image, [location(i,1), location(i,2)]), interpImg(image, [location(i,1), location(i,2) + 1]) - interpImg(image, [location(i,1), location(i,2)])]);
-    end
+    grad_record = abs([interpImg(image, [location(:,1) + 1, location(:,2)]) - interpImg(image, [location(:,1), location(:,2)]), interpImg(image, [location(:,1), location(:,2) + 1]) - interpImg(image, [location(:,1), location(:,2)])]);
     selector = (grad_record(:,1) < grad_th) & (grad_record(:,2) < grad_th);
 end
 function counts = get_useable_sample_pt(cur_obj, sz_depth_map, visible_pts)

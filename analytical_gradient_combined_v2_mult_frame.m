@@ -7,7 +7,7 @@ function [sum_diff, sum_hess, sum_loss] = analytical_gradient_combined_v2_mult_f
     ratio_regularization = 10000000;
     
     [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, extrinsic_param, pixel_loc, params);
-    pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector);
+    pixel_loc = pixel_loc(selector, :); linear_ind = linear_ind(selector); plane_ind_batch = plane_ind_batch(selector); gt = gt(selector);
     
     [sum_diff1, sum_hess1] = accum_diff_and_hessian_inv(cuboid, intrinsic_param, extrinsic_param, pixel_loc, activation_label, gt, plane_ind_batch);
     [sum_diff2, sum_hess2] = accum_diff_and_hessian_pos_v2(visible_pt_3d, params, extrinsic_param, intrinsic_param, activation_label, depth_map, ratio);
@@ -70,7 +70,6 @@ function [plane_ind_batch, cuboid, selector] = sub_preparation(intrinsic_param, 
     cuboid = generate_center_cuboid_by_params(params);
     cuboid = add_transformation_matrix_to_cuboid(cuboid);
     [plane_ind_batch, stop_flag, selector] = judege_plane(cuboid, intrinsic_param, extrinsic_param, pixel_loc);
-    
 end
 function [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map)
     gt = get_ground_truth(depth_map, linear_ind); pixel_loc = get_pixel_loc(depth_map, linear_ind);
@@ -269,7 +268,13 @@ function cuboid = rotate_degree_to_cuboid(cuboid, degree)
 end
 function sign_rec = judge_sign(cuboid, pts_3d, plane_ind)
     global sigmoid_m sigmoid_bias
-    th = - sigmoid_bias / sigmoid_m;
+    l = cuboid{1}.length1; w = cuboid{2}.length1;
+    if plane_ind == 1
+        norm_length = l;
+    else
+        norm_length = w;
+    end
+    th = - sigmoid_bias / sigmoid_m * norm_length;
     A = get_transformation_matrix(cuboid, plane_ind);
     pts_3d = (A * pts_3d')'; sign_rec = zeros(size(pts_3d,1),1);
     sign_rec(pts_3d(:,1)<=th) = -1; sign_rec(pts_3d(:,1)>th) = 1;
@@ -295,12 +300,8 @@ function [plane_type_rec, stop_flag, selector] = judege_plane(cuboid, intrinsic,
             % draw_cuboid(cuboid); hold on; cmap = colormap; color_map_ind = map_vector_to_colormap(x1_sv(:,1), cmap);
             % scatter3(x1_sv(:,1), x1_sv(:,2), x1_sv(:,3), 3, cmap(color_map_ind, :), 'fill');
             % x1_sv = x1;
-            try
             x1 = (A * x1')'; selector = x1(:,1) <= l; 
             plane_type_rec(selector) = 1;
-            catch
-                a = 1;
-            end
         end
         if plane_ind == 2
             A = get_transformation_matrix(cuboid, plane_ind);
@@ -905,18 +906,20 @@ function ft = cal_func_ft(params, t, plane_ind)
     if plane_ind == 2
         [ft, ~, t_vals] = sigmoid_func(t, w);
     end
-    if ft >= 1 / 2
-        ft = 2 * (ft - 1/2);
-    else
-        ft = 1 / 2 * t_vals;
-    end
+    selector = (ft >= 1/2); num_ans1 = 2 * (ft - 1/2); num_ans2 = 1 / 2 * t_vals;
+    ft(selector) = num_ans1(selector); ft(~selector) = num_ans2(~selector);
+    % if ft >= 1 / 2
+    %     ft = 2 * (ft - 1/2);
+    % else
+    %     ft = 1 / 2 * t_vals;
+    % end
 end
 function [sig_val, m, t_vals] = sigmoid_func(t, norm_length)
     global sigmoid_m sigmoid_bias
     l = norm_length; th_ = 20; sig_val = zeros(size(t,1), 1);
     m = sigmoid_m; bias = sigmoid_bias; selector = t < th_;
     sig_val(selector) = exp(m / l .* t(selector) + bias) ./ (exp(m / l .* t(selector) + bias) + 1);
-    sig_val(~selector) = 1; t_vals = m / l .* t(selector) + bias;
+    sig_val(~selector) = 1; t_vals = m / l .* t + bias;
     % sig_val = 2 * (exp(m / l .* t) ./ (exp(m / l .* t) + 1) - 1/2);
 end
 function t = calculate_distance_t(c, x, cuboid, plane_ind)
