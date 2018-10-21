@@ -1,6 +1,6 @@
 help_info = helper();
 % estimate_affine_matrix(help_info);
-align_frame(help_info)
+% align_frame(help_info)
 % generate_seg_mat(help_info)
 % do_segmentation(help_info);
 % create_rgb_cluster(help_info);

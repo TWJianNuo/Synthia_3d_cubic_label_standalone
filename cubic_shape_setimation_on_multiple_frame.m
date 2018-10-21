@@ -1,21 +1,43 @@
 function cubic_shape_setimation_on_multiple_frame(help_info)
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/17_Oct_2018_12_mul/1_4.mat');
-    % cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind);
+    load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/19_Oct_2018_15_mul/4_32.mat');
+    cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind);
     global path_mul
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : 1
+        for frame = 1 : max_frame
             % save([path_mul num2str(frame) '.mat'])
+            try
             rgb = grab_rgb_by_mat(frame, help_info{jj});
             [data_cluster, depth_cluster] = read_in_clusters(frame, help_info{jj});
+            data_cluster = exclude_data_cluster_of_moving_things(data_cluster);
             [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
-            metric_record = calculate_metric(cubic_cluster, data_cluster, depth_cluster);
-            rgb = render_image_building(rgb, cubic_cluster, data_cluster);
-            save_results(metric_record, rgb, frame);
+            % metric_record = calculate_metric(cubic_cluster, data_cluster, depth_cluster);
+            % rgb = render_image_building(rgb, cubic_cluster, data_cluster);
+            % save_results(metric_record, rgb, frame);
+            render_in_3d(data_cluster, cubic_cluster);
+            catch
+            end
             % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
         end
     end
+end
+function render_in_3d(data_cluster, cubic_cluster)
+    figure(1); clf; 
+    for i = 1 : length(data_cluster)
+        color = cubic_cluster{i}.color;
+        draw_cubic_shape_frame(cubic_cluster{i}.cuboid); hold on;
+        scatter3(data_cluster{i}.pts_new(:,1), data_cluster{i}.pts_new(:,2), data_cluster{i}.pts_new(:,3), 3, color, 'fill');
+    end
+end
+function data_cluster = exclude_data_cluster_of_moving_things(data_cluster)
+    selector = false(size(data_cluster,1), 1);
+    for i = 1 : length(selector)
+        if data_cluster{i}{1}.instanceId > 10000
+            selector(i) = true;
+        end
+    end
+    data_cluster(selector) = [];
 end
 function intrinsic_params = read_intrinsic(base_path)
     txtPath = [base_path 'CameraParams/' 'intrinsics.txt'];
@@ -47,10 +69,18 @@ function save_results(metric_record, rgb, frame)
     else
         f1 = fopen([path_mul 'rgb_image/' 'metric.txt'],'a');
     end
-    print_matrix(f1, [frame]);
+    print_matrix(f1, frame);
     print_matrix(f1, metric_record);
 end
 function rgb = render_image_building(rgb, cubic_cluster, data_cluster)
+    r = rgb(:,:,1); g = rgb(:,:,2); b = rgb(:,:,3);
+    for i = 1 : length(data_cluster)
+        color = uint8(ceil(data_cluster{i}{end}.color * 255));
+        r(data_cluster{i}{end}.linear_ind) = color(1);
+        g(data_cluster{i}{end}.linear_ind) = color(2);
+        b(data_cluster{i}{end}.linear_ind) = color(3);
+    end
+    rgb = cat(3, r, g, b);
     for i = 1 : length(data_cluster)
         intrinsic_params = data_cluster{i}{end}.intrinsic_params;
         extrinsic_params = data_cluster{i}{end}.extrinsic_params * inv(data_cluster{i}{1}.affine_matrx);
@@ -71,47 +101,36 @@ end
 function cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
     % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/17_Oct_2018_12_mul/1_4.mat');
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/18_Oct_2018_23_mul/1_70.mat');
     activation_label = cubic_record_entry.activation_label; depth_cluster = image_blur(depth_cluster);
-    sz_depth_map = size(depth_cluster.depth_maps{1}); it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
+    it_num = 200; loss_record = zeros(it_num, 1); cuboid_record = cell(it_num, 1);
     delta_record_norm = zeros(it_num, 1);
+    counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, cubic_record_entry.visible_pts);
     for i = 1 : it_num
         cuboid = cubic_record_entry.cuboid; visible_pts = cubic_record_entry.visible_pts;
-        is_visible_record = get_visible_objs(cuboid, objs); t_objs = objs(is_visible_record);
-        if i == 1
-            counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, visible_pts);
+        diff_sum = 0; hess_sum = 0; loss_sum = 0;
+        delta_norm_record = zeros(length(objs),1);
+        for j = 1 : length(objs)
+            if sum(counts_set(j,:)) == 0
+                continue;
+            end
+            depth_map = grab_depth_map(depth_cluster, objs{j});
+            
+            [diff, hess, loss] = accum_for_one_obj(cuboid, objs{j}, depth_map, visible_pts(counts_set(j,:), :), activation_label);
+            visualize_inner_sit(cuboid, objs{j}, depth_map, visible_pts, activation_label, counts_set(j,:))
+            diff_sum = diff_sum + diff; hess_sum = hess_sum + hess; loss_sum = loss_sum + loss;
+            delta_norm_record(j) = norm(get_delta_from_diff_and_hess(diff, hess));
         end
-        if ~isempty(t_objs)
-            diff_sum = 0; hess_sum = 0; loss_sum = 0;
-            t_counts_set = counts_set(is_visible_record, :); delta_norm_record = zeros(length(t_objs),1);
-            if sum(sum(t_counts_set)) == 0
-                break;
-            end
-            for j = 1 : length(t_objs)
-                if sum(t_counts_set(j,:)) == 0
-                    continue;
-                end
-                depth_map = grab_depth_map(depth_cluster, t_objs{j}); 
-                [diff, hess, loss] = accum_for_one_obj(cuboid, t_objs{j}, depth_map, visible_pts(t_counts_set(j,:), :), activation_label);
-                % visualize_inner_sit(cuboid, t_objs{j}, depth_map, visible_pts, activation_label, t_counts_set(j,:))
-                diff_sum = diff_sum + diff; hess_sum = hess_sum + hess; loss_sum = loss_sum + loss;
-                delta_norm_record(j) = norm(get_delta_from_diff_and_hess(diff, hess));
-            end
-            delta_theta = get_delta_from_diff_and_hess(diff_sum, hess_sum); loss_record(i) = loss_sum; cuboid_record{i} = cubic_record_entry; delta_record_norm(i) = norm(delta_theta);
-            % save_visualize(cubic_record_entry, objs, i, frame_num, obj_ind);
-            cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label, t_objs{1});
-            if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-                break;
-            end
-        else
-            break
+        delta_theta = get_delta_from_diff_and_hess(diff_sum, hess_sum);
+        loss_record(i) = loss_sum; cuboid_record{i} = cubic_record_entry;
+        delta_record_norm(i) = norm(delta_theta);
+        cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label, objs{1});
+        if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
+            break;
         end
     end
-    % save_visualize(cubic_record_entry, t_objs, it_num, frame_num, obj_ind);
-    if ~isempty(t_objs)
-        % save_stem(loss_record, frame_num, obj_ind);
-        % figure(1); clf; stem(loss_record,'filled')
-    end
+    save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind);
+    save_stem(loss_record(loss_record ~= 0), frame_num, obj_ind);
 end
 function depth_map_cluster = image_blur(depth_map_cluster)
     for i = 1 : length(depth_map_cluster)
@@ -210,7 +229,8 @@ function visible_plane_ind = find_visible_plane(cuboid, intrinsic_params, extrin
         1/2 * h;
         1
         ];
-    visible_pt_label = find_visible_pt_global({cuboid}, [c1';c2';c3';c4'], intrinsic_params, extrinsic_params);
+    visible_pt_label = find_visible_pt_global_({cuboid}, [c1';c2';c3';c4'], intrinsic_params, extrinsic_params);
+    % visible_pt_label = find_visible_pt_global({cuboid}, [c1';c2';c3';c4'], intrinsic_params, extrinsic_params);
     visible_plane_ind = visible_plane_ind(visible_pt_label);
 end
 function visible_pts = find_visible_pts(cuboid, sampled_pts, extrinsic, intrinsic, affine)
@@ -241,16 +261,6 @@ function save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind)
             scatter3(pts(:,1), pts(:,2), pts(:,3), 3, 'g', 'fill'); hold on;
         end
         axis equal; F = getframe(gcf); [X, ~] = frame2im(F);
-        %{
-        if it_num == 1
-            [az,el] = view; limit = axis;
-            axis_param_vi = [az,el,limit];
-        else
-            view(axis_param_vi(1:2));
-            axis(axis_param_vi(3:end));
-        end
-        %}
-        % path = '/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Exp_re/cubic_shape_estimation/single_frame_exp/';
         imwrite(X, [path_mul num2str(frame_num) '_' num2str(obj_ind) '_' num2str(it_num) '.png']); pause(1)
     end
 end
@@ -271,17 +281,50 @@ function to_stop = judge_stop(delta, cuboid, diff_record, delta_record_norm)
 end
 function cubic_record = update_cuboid_entry(cubic_record, delta_theta, activation_label, cur_obj)
     cuboid = cubic_record.cuboid; params = generate_cubic_params(cuboid); activation_label = (activation_label == 1);
-    %{
-    ratio = max(abs(delta_theta) ./ (0.05 * abs(params(activation_label)))); 
-    if ratio > 1
-        delta_theta = delta_theta / ratio;
-    end
-    %}
     params(activation_label) = params(activation_label) + delta_theta;
-    n_cuboid = generate_center_cuboid_by_params(params); visible_pts = sample_cubic_by_num(n_cuboid, 10, 10);
-    % visible_pts = acquire_visible_sampled_points(n_cuboid, cur_obj.intrinsic_params, cur_obj.extrinsic_params, cur_obj.affine_matrx);
-    visible_pts = find_visible_pts(cuboid, visible_pts, cur_obj.extrinsic_params, cur_obj.intrinsic_params, cur_obj.affine_matrx);
-    cubic_record.cuboid = n_cuboid; cubic_record.visible_pts = visible_pts;
+    n_cuboid = generate_center_cuboid_by_params(params); % visible_pts = sample_cubic_by_num(n_cuboid, 10, 10);
+    cubic_record.cuboid = n_cuboid; 
+    new_pt = pts_3d(cubic_record.visible_pts(:, 5:6), cubic_record.visible_pts(:, 4), params(1), params(2), params(3), params(4), params(5), params(6))';
+    cubic_record.visible_pts(:, 1:3) = new_pt(:,1:3);
+end
+function pts3 = pts_3d(k, plane_ind, theta, xc, yc, l, w, h)
+    pts3 = zeros(4, length(plane_ind));
+    for cur_plane_ind = 1 : 4
+        selector = (plane_ind == cur_plane_ind);
+        k1 = k(selector,1)'; k2 = k(selector,2)';
+        if cur_plane_ind == 1
+            pts3(:, selector) = [
+                xc - 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) + k1 * cos(theta) * l;
+                yc - 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + k1 * sin(theta) * l;
+                k2 * h;
+                ones(size(k1));
+                ];
+        end
+        if cur_plane_ind == 2
+            pts3(:, selector) = [
+                xc + 1 / 2 * l * cos(theta) + 1 / 2 * w * sin(theta) - w * k1 * sin(theta);
+                yc + 1 / 2 * l * sin(theta) - 1 / 2 * w * cos(theta) + w * k1 * cos(theta);
+                k2 * h;
+                ones(size(k1));
+                ];
+        end
+        if cur_plane_ind == 3
+            pts3(:, selector) = [
+                xc + 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) - k1 * l * cos(theta);
+                yc + 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - k1 * l * sin(theta);
+                k2 * h;
+                ones(size(k1));
+                ];
+        end
+        if cur_plane_ind == 4
+            pts3(:, selector) = [
+                xc - 1 / 2 * l * cos(theta) - 1 / 2 * w * sin(theta) + w * k1 * sin(theta);
+                yc - 1 / 2 * l * sin(theta) + 1 / 2 * w * cos(theta) - w * k1 * cos(theta);
+                k2 * h;
+                ones(size(k1));
+                ];
+        end
+    end
 end
 function delta = get_delta_from_diff_and_hess(sum_diff, sum_hess)
     if sum(isnan(sum_diff)) + sum(sum(isnan(sum_hess))) > 0
@@ -342,12 +385,40 @@ function is_visible_record = get_visible_objs(cuboid, objs)
         is_visible_record(i) = judge_is_still_visible(cuboid, objs{i});
     end
 end
+function [depth_map, pos_ind] = distill_depth_map_frame_depth_cluster(cur_obj, depth_cluster)
+    frame_num = cur_obj.frame; pos_ind = 0;
+    for i = 1 : length(depth_cluster.frame_ind)
+        if frame_num == depth_cluster.frame_ind(i)
+            pos_ind = i;
+        end
+    end
+    depth_map = depth_cluster.depth_maps{pos_ind};
+end
 function counts_set = get_useable_sample_for_obj_cluster(objs, depth_cluster, visible_pts)
     counts_set = false(size(objs, 1), size(visible_pts,1)); sz_depth_map = size(depth_cluster.depth_maps{1});
+    grad_th = 100; 
     for i = 1 : length(objs)
-        counts_set(i,:) = get_useable_sample_pt(objs{i}, sz_depth_map, visible_pts);
-        [depth_map, ~] = distill_depth_map_frame_depth_cluster(objs{i}, depth_cluster);
-        counts_set(i,:) = counts_set(i,:) & exclude_border_points(visible_pts, objs{i}, depth_map)';
+        depth_map_ind = objs{i}.frame - depth_cluster.frame_ind(1) + 1;
+        pts_2d = round(project_point_2d(objs{i}.extrinsic_params * inv(objs{i}.affine_matrx), objs{i}.intrinsic_params, [visible_pts(:,1:3), ones(size(visible_pts,1),1)]));
+        selector = true(size(visible_pts,1),1);
+        try
+            selector_in_img = true(size(visible_pts,1),1);
+            tot_indices = sub2ind(sz_depth_map, pts_2d(:,2), pts_2d(:,1));
+        catch
+            selector_in_img = pts_2d(:,1) >= 1 & pts_2d(:,1) <= sz_depth_map(2) & pts_2d(:,2) >=1 & pts_2d(:,2) <= sz_depth_map(1);
+            tot_indices = sub2ind(sz_depth_map, pts_2d(selector_in_img,2), pts_2d(selector_in_img,1));
+        end
+        lia = ismember(tot_indices, objs{i}.linear_ind); % Judge whether within obj;
+        
+        grad_record = abs([interpImg_(depth_cluster.depth_maps{depth_map_ind}, [pts_2d(:,1) + 1, pts_2d(:,2)]) - interpImg_(depth_cluster.depth_maps{depth_map_ind}, [pts_2d(:,1), pts_2d(:,2)]), interpImg_(depth_cluster.depth_maps{depth_map_ind}, [pts_2d(:,1), pts_2d(:,2) + 1]) - interpImg_(depth_cluster.depth_maps{depth_map_ind}, [pts_2d(:,1), pts_2d(:,2)])]);
+        selector_border = (grad_record(:,1) < grad_th) & (grad_record(:,2) < grad_th);
+        selector(~selector_in_img) = false; selector(selector_in_img) = (lia & selector_border); % Judge whether on the border
+        
+        counts_set(i, :) = selector'; 
+        
+        % Visualizaton:
+        % cur_depth_map = mark_on_depth_map(depth_cluster.depth_maps{depth_map_ind}, pts_2d(selector_in_img, 1:2), rand(1,3));
+        % figure(1); clf; imshow(cur_depth_map);
     end
 end
 function selector = exclude_border_points(visible_pts, obj, image)
@@ -387,7 +458,7 @@ function cubic_cluster = restore_changed_cubics(cubic_cluster, data_cluster)
 end
 function [cuboid, sampled_pts] = re_estimate_cubic_entry(old_cuboid, objs)
     % Adjust initial guess for the new coming points
-    tot_pt_num = 0; iou_th = 0.2;
+    tot_pt_num = 0; iou_th = 0.7;
     for i = 1 : length(objs)
         tot_pt_num = tot_pt_num + length(objs{i}.linear_ind);
     end
@@ -421,7 +492,6 @@ function [cuboid, sampled_pts] = restore_new_cubic_shape(old_cubic, cur_obj)
     [cuboid, sampled_pts] = tune_cubic_shape_to_specific_entry(new_cuboid, cur_obj);
 end
 function [data_cluster, cubic_cluster] = trim_incontinuous_frame(data_cluster, cubic_cluster)
-    default_activation_label = [1 1 1 1 1 0];
     for i = 1 : length(data_cluster)
         cuboid = cubic_cluster{i}.cuboid; [cuboid, sampled_pts] = tune_cubic_shape_to_specific_entry(cuboid, data_cluster{i}{end});
         cubic_cluster{i}.cuboid = cuboid; cubic_cluster{i}.visible_pts = sampled_pts;
@@ -474,15 +544,7 @@ function pos = find_pos_of_certain_ind_in_cubic_cluster(cubic_cluster, instance_
         end
     end
 end
-function [depth_map, pos_ind] = distill_depth_map_frame_depth_cluster(cur_obj, depth_cluster)
-    frame_num = cur_obj.frame; pos_ind = 0;
-    for i = 1 : length(depth_cluster.frame_ind)
-        if frame_num == depth_cluster.frame_ind(i)
-            pos_ind = i;
-        end
-    end
-    depth_map = depth_cluster.depth_maps{pos_ind};
-end
+
 function [data_cluster, depth_cluster] = read_in_clusters(frame, help_info_entry)
     path = [help_info_entry{9} 'Instance_map_organized/'];
     holder1 = load([path num2str(frame, '%06d') '.mat']); data_cluster = holder1.data_cluster; data_cluster = correct_affine_error(data_cluster);
@@ -519,13 +581,14 @@ function sampled_pts = acquire_visible_sampled_points(cuboid, intrinsic_params, 
     sample_pt_num = 10;
     sampled_pts = sample_cubic_by_num(cuboid, sample_pt_num, sample_pt_num);
     extrinsic_params = extrinsic_params * inv(affine_matrix);
-    visible_label = find_visible_pt_global({cuboid}, sampled_pts(:, 1:3), intrinsic_params, extrinsic_params);
+    visible_label = find_visible_pt_global_({cuboid}, [sampled_pts(:, 1:3) ones(size(sampled_pts,1),1)], intrinsic_params, extrinsic_params);
+    % visible_label = find_visible_pt_global({cuboid}, sampled_pts(:, 1:3), intrinsic_params, extrinsic_params);
     sampled_pts = sampled_pts(visible_label, :);
 end
 function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
     % color = uint8(randi([1 255], [1 3]));
     % color = rand([1 3]);
-    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'White');
+    shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'Custom');
     pts3d = zeros(8,4);
     for i = 1 : 4
         pts3d(i, :) = [cubic{i}.pts(1, :) 1];
@@ -610,6 +673,7 @@ function is_visible = jude_is_first_and_second_plane_visible(cuboid, intrinsic_p
         1/2 * h;
         1
         ];
-    visible_pt_label = find_visible_pt_global({cuboid}, [c1';c2'], intrinsic_params, extrinsic_params);
+    visible_pt_label = find_visible_pt_global_({cuboid}, [c1';c2'], intrinsic_params, extrinsic_params);
+    % visible_pt_label = find_visible_pt_global({cuboid}, [c1';c2'], intrinsic_params, extrinsic_params);
     is_visible = visible_pt_label(1) & visible_pt_label(2); 
 end
