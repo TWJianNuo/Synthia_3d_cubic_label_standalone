@@ -33,7 +33,8 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : 10
+        for frame = 1 : max_frame
+            save([path_mul num2str(frame) '.mat'])
             % Prepare data
             rgb = grab_rgb_by_mat(frame, help_info{jj});
             [data_cluster, depth_cluster] = read_in_clusters(frame, help_info{jj});
@@ -202,7 +203,7 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
     global path_mul
     % Make sure all the points are near the surface
     % Cut the cubic shape after the optimization
-    save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
+    % save([path_mul num2str(frame_num) '_' num2str(obj_ind) '.mat'])
     % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/18_Oct_2018_23_mul/1_70.mat');
     activation_label = cubic_record_entry.activation_label; depth_cluster_ = image_blur(depth_cluster);
     it_num = 200; loss_record = zeros(it_num, 1); 
@@ -250,10 +251,10 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
     [loss_cur, num_on_cubic_cur] = metric_pos_and_inv(best_cuboid_entry.cuboid, objs, depth_cluster);
     if (num_on_cubic_cur < num_on_cubic_org *(1 - num_on_pt_th)) || (loss_org < loss_cur)
         best_cuboid_entry = truncate_cuboid(objs, depth_cluster, org_cubic_record_entry, activation_label, true);
-        save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
+        % save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
     else
-        save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
-        save_stem(loss_record(loss_record ~= 0), frame_num, obj_ind);
+        % save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
+        % save_stem(loss_record(loss_record ~= 0), frame_num, obj_ind);
     end
 end
 function depth_map_cluster = image_blur(depth_map_cluster)
