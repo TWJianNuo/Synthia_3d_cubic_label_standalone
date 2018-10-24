@@ -1,8 +1,8 @@
 function [x_inv_record, dominate_pts, dominate_color] = visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label, color1, color2)
-    load('debug.mat')
+    % load('debug.mat')
     global sigmoid_m sigmoid_bias
     sigmoid_m = 10; sigmoid_bias = 4;
-    ratio = 1.5; activation_label = (activation_label == 1); [flag1, flag2] = judge_flag(nargin);
+    ratio = 1.5; activation_label = (activation_label == 1); [flag1, flag2] = judge_flag(nargin); flag1 = false; flag2 = false;
     if ~flag1 color1 = [zeros(length(linear_ind),1) zeros(length(linear_ind),1) ones(length(linear_ind),1)]; end
     if ~flag2 color2 = [zeros(size(visible_pt_3d, 1),1) ones(size(visible_pt_3d, 1),1) zeros(size(visible_pt_3d, 1),1)]; end
     [params, gt, pixel_loc] = make_preparation(cuboid, extrinsic_param, intrinsic_param, linear_ind, depth_map);
@@ -58,29 +58,29 @@ function [dominate_pts, dominate_color] = visualize(cuboid, x_inv_record, x_pos_
     dir_pos = pts3_pos_change(:,1:3) - x_pos_record(:,1:3); dir_pos = dir_pos ./ repmat(vecnorm(dir_pos, 2, 2), [1 3]);
     
     val = [diff_inv_record; diff_pos_record]; colors = generate_cmap_array(val); pts = [x_inv_record; x_pos_record];
-    quiv_size = (val - min(val)); quiv_size = quiv_size / max(quiv_size) * 3 + 1; 
+    quiv_size = (val - min(val)); quiv_size = quiv_size / max(quiv_size) * 3 + 0.5; 
     quiv_size_inv = quiv_size(1: size(dir_inv,1)); quiv_size_pos = quiv_size(size(dir_inv,1) + 1 : end);
     
     dominate_pts = [x_inv_record; x_pos_record]; dominate_selector = (quiv_size > 1); dominate_pts = dominate_pts(dominate_selector, :);
     dominate_color = [color1; color2]; dominate_color = dominate_color(dominate_selector, :);
-    figure(1); clf;
+    figure(2); clf;
     draw_cubic_shape_frame(cuboid); hold on;
     scatter3(x_inv_record(:,1),x_inv_record(:,2),x_inv_record(:,3),20,color1,'fill'); hold on;
     % pts_c = [pts_pos_gt; pts_3d_gt];
-    pts_c = [pts_pos_gt];
+    pts_c = [pts_3d_gt];
     scatter3(pts_c(:,1),pts_c(:,2),pts_c(:,3),20,'c','fill'); hold on;
-    scatter3(x_pos_record(:,1),x_pos_record(:,2),x_pos_record(:,3),20,color2,'fill'); hold on;
+    % scatter3(x_pos_record(:,1),x_pos_record(:,2),x_pos_record(:,3),20,color2,'fill'); hold on;
     for i = 1 : size(x_inv_record,1)
         quiver3(x_inv_record(i,1),x_inv_record(i,2),x_inv_record(i,3),dir_inv(i,1),dir_inv(i,2),dir_inv(i,3),quiv_size_inv(i),'b'); hold on;
     end
     for i = 1 : size(x_pos_record,1)
-        quiver3(x_pos_record(i,1),x_pos_record(i,2),x_pos_record(i,3),dir_pos(i,1),dir_pos(i,2),dir_pos(i,3),quiv_size_pos(i),'g'); hold on;
+        % quiver3(x_pos_record(i,1),x_pos_record(i,2),x_pos_record(i,3),dir_pos(i,1),dir_pos(i,2),dir_pos(i,3),quiv_size_pos(i),'g'); hold on;
     end
     for i = 1 : size(x_inv_record,1)
         plot3([x_inv_record(i,1);pts_3d_gt(i,1)],[x_inv_record(i,2);pts_3d_gt(i,2)],[x_inv_record(i,3);pts_3d_gt(i,3)],'LineStyle',':','Color','k'); hold on;
     end
     for i = 1 : size(x_pos_record,1)
-        plot3([x_pos_record(i,1);pts_pos_gt(i,1)],[x_pos_record(i,2);pts_pos_gt(i,2)],[x_pos_record(i,3);pts_pos_gt(i,3)],'LineStyle',':','Color','k'); hold on;
+        % plot3([x_pos_record(i,1);pts_pos_gt(i,1)],[x_pos_record(i,2);pts_pos_gt(i,2)],[x_pos_record(i,3);pts_pos_gt(i,3)],'LineStyle',':','Color','k'); hold on;
     end
 end
 function colors = generate_cmap_array(val)

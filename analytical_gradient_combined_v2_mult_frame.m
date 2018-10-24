@@ -89,8 +89,9 @@ function [sum_diff, sum_hess, sum_jacob] = accum_diff_and_hessian_inv(cuboid, in
         sum_diff = sum_diff + (ground_truth(i) - gt * ft) * jacob; 
         sum_hess = sum_hess + jacob' * jacob;
         sum_jacob = sum_jacob + jacob;
-        % is_right = check_grad_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
-        % is_right = check_grad_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind);
+        % if (check_grad_ft(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind)) | (check_grad_gt(cuboid, pixel_loc, intrinsic_param, extrinsic_param, plane_ind))
+        %     disp('Error')
+        % end
     end
 end
 function delta = get_delta_from_diff_and_hess(sum_diff, sum_hess, activation_label)
@@ -515,7 +516,7 @@ function is_right = check_grad_ft(cuboid, pixel_loc, intrinsic, extrinsic, plane
     g_t_theta = grad_t(g_c_theta, g_x_theta, c, x, cuboid, plane_ind); t = calculate_distance_t(c, x, cuboid, plane_ind);
     grad_ft_theta = grad_ft(cuboid, g_t_theta, t, plane_ind);
     %}
-    grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind);
+    grad_ft_theta = get_grad_ft_theta(cuboid, pixel_loc, intrinsic, extrinsic, plane_ind, params);
     for i = 1 : check_num
         if abs(grad_ft_theta(i)) < judge_cri / 100
             continue;
@@ -538,8 +539,8 @@ function is_right = check_grad_ft(cuboid, pixel_loc, intrinsic, extrinsic, plane
         ft1 = cal_func_ft(cur_cuboid1, t1, plane_ind);
         ft2 = cal_func_ft(cur_cuboid2, t2, plane_ind);
         %}
-        ft1 = get_ft(cur_cuboid1, pixel_loc, intrinsic, extrinsic, plane_ind);
-        ft2 = get_ft(cur_cuboid2, pixel_loc, intrinsic, extrinsic, plane_ind);
+        ft1 = get_ft(cur_cuboid1, pixel_loc, intrinsic, extrinsic, plane_ind, params);
+        ft2 = get_ft(cur_cuboid2, pixel_loc, intrinsic, extrinsic, plane_ind, params);
         num_grad = (ft1 - ft2) / 2 / delta;
         if abs(max(abs(num_grad ./ grad_ft_theta(:, i)) - 1))> judge_cri
             is_right = 0;
