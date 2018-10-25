@@ -658,11 +658,15 @@ function ft = cal_func_ft(t, plane_type_rec, l, w, sigmoid_m, sigmoid_bias)
     ft(~selector) = num_ans2(~selector);
 end
 function [sig_val, t_vals] = sigmoid_func(t, norm_length, sigmoid_m, sigmoid_bias)
-    th_ = 20; sig_val = zeros(size(t,1), 1);
-    selector = t < th_;
-    sig_val(selector) = exp(sigmoid_m / norm_length .* t(selector) + sigmoid_bias) ./ (exp(sigmoid_m / norm_length .* t(selector) + sigmoid_bias) + 1);
-    sig_val(~selector) = 1; 
+    % th_ = 20; sig_val = zeros(size(t,1), 1);
+    % selector = t < th_;
+    % sig_val(selector) = exp(sigmoid_m / norm_length .* t(selector) + sigmoid_bias) ./ (exp(sigmoid_m / norm_length .* t(selector) + sigmoid_bias) + 1);
+    % sig_val(~selector) = 1; 
+    % sig_val = exp(sigmoid_m / norm_length .* t + sigmoid_bias) ./ (exp(sigmoid_m / norm_length .* t + sigmoid_bias) + 1);
     t_vals = sigmoid_m / norm_length .* t + sigmoid_bias;
+    sig_val = exp(t_vals) ./ (exp(t_vals) + 1);
+    sig_val(sig_val == inf) = 1;
+    
 end
 function t = calculate_distance_t(plane_type_rec, x, c1, c2, sign_inv)
     selector = (plane_type_rec == 1);

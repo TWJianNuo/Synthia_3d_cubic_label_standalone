@@ -33,28 +33,80 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : 5
-            save([path_mul num2str(frame) '.mat'])
+        for frame = 1 : max_frame
+            % save([path_mul num2str(frame) '.mat'])
+            % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/24_Oct_2018_22_mul/9.mat')
             % Prepare data
+            % label = read_in_type_map(help_info{jj}, frame);
             rgb = grab_rgb_by_mat(frame, help_info{jj});
             [data_cluster, depth_cluster] = read_in_clusters(frame, help_info{jj});
-            data_cluster = exclude_data_cluster_of_moving_things(data_cluster);
             
-            % [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame);
+            % Exclude bad aligned or moving objects except for building
+            for i = 1 : length(data_cluster)
+                building_type = 2; valid_frame = true(length(data_cluster{i}),1); IOU_th = 0.7;
+                for j = 1 : length(data_cluster{i}) - 1
+                    if data_cluster{i}{j}.obj_type == building_type
+                        break
+                    end
+                    pts_2d = round(project_point_2d(data_cluster{i}{j}.extrinsic_params, data_cluster{i}{j}.intrinsic_params, data_cluster{i}{j}.pts_new, data_cluster{i}{j}.affine_matrx));
+                    selector = (pts_2d(:,1) > 0) & (pts_2d(:,1) <= size(rgb,2)) & (pts_2d(:,2) > 0) & (pts_2d(:,2) < size(rgb,1));
+                    cur_linaer = sub2ind([size(rgb,1), size(rgb,2)], pts_2d(selector,2), pts_2d(selector,1));
+                    dup = ismember(cur_linaer, data_cluster{i}{end}.linear_ind);
+                    if sum(dup) / (length(selector) + length(data_cluster{i}{end}.linear_ind)) < IOU_th
+                        valid_frame(j) = false;
+                    end
+                end
+                % Restore restore matrix
+                restore_matrix = data_cluster{i}{1}.restore_matrix;
+                data_cluster{i}(~valid_frame) = [];
+                data_cluster{i}{1}.restore_matrix = restore_matrix;
+            end
             
             cubic_cluster = get_cubic_cluster(data_cluster, cubic_cluster);
             cubic_cluster = restore_changed_cubics(cubic_cluster, data_cluster);
             [data_cluster, cubic_cluster] = trim_incontinuous_frame(data_cluster, cubic_cluster);
-            for i = 1 : length(data_cluster)
-                cubic_cluster{i} = optimize_for_single_obj_set(cubic_cluster{i}, data_cluster{i}, depth_cluster, frame, i);
-            end
+            % rgb = render_image(rgb, cubic_cluster, data_cluster);
+            % figure(1); clf; imshow(rgb);
             
+            ratio_off_obj_rec = zeros(length(data_cluster),1); loss_record = zeros(length(data_cluster),1); max_diff_rec = zeros(length(data_cluster),1);
+            for i = 1 : length(data_cluster)
+                [cubic_cluster{i}, ratio_off_obj_rec(i), loss_record(i), max_diff_rec(i)] = optimize_for_single_obj_set(cubic_cluster{i}, data_cluster{i}(valid_frame), depth_cluster, frame, i);
+            end
+            % check_projection(cubic_cluster, data_cluster, rgb, ratio_off_obj_rec, loss_record, max_diff_rec)
             % Visualize results and save
-            rgb = render_image(rgb, cubic_cluster, data_cluster);
-            metric_record = 1; save_results(metric_record, rgb, frame);
+            rgb = render_image(rgb, cubic_cluster, data_cluster, max_diff_rec);
+            % figure(1); clf; imshow(rgb);
+            save_results(loss_record, rgb, frame, cubic_cluster);
             % render_in_3d(data_cluster, cubic_cluster, frame);
             % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
         end
+    end
+end
+function label = read_in_type_map(help_info_entry, frame)
+    local_path = [help_info_entry{1} help_info_entry{3} num2str(frame, '%06d') '.png'];
+    [label, ~] = getIDs(local_path);
+end
+function check_projection(cubic_cluster, data_cluster, rgb, ratio_off_obj_rec, loss_record, max_diff_rec)
+    diff_record = zeros(0);
+    for i = 1 : length(data_cluster)
+        figure(1); clf;
+        draw_cubic_shape_frame(cubic_cluster{i}.cuboid); 
+        for j = 1 : length(data_cluster{i})
+            pts = data_cluster{i}{j}.pts_new;
+            pts_2d = round(project_point_2d(data_cluster{i}{j}.extrinsic_params, data_cluster{i}{j}.intrinsic_params, pts, data_cluster{i}{j}.affine_matrx));
+            linear_ind = sub2ind([size(rgb,1), size(rgb,2)], pts_2d(:,2), pts_2d(:,1));
+            linear_ind_rec = data_cluster{i}{j}.linear_ind;
+            diff_record = [diff_record max(abs(linear_ind - linear_ind_rec))];
+            if j == length(data_cluster{i})
+                hold on; scatter3(pts(:,1),pts(:,2),pts(:,3),5,'b','fill');
+            else
+                hold on; scatter3(pts(:,1),pts(:,2),pts(:,3),3,'g','fill');
+            end
+        end
+        axis equal
+        a = ratio_off_obj_rec(i); 
+        b = loss_record(i);
+        max_diff_rec(i)
     end
 end
 function check_data_cluster(objs, depth_cluster)
@@ -116,19 +168,28 @@ function rgb = grab_rgb_by_mat(frame, help_info_entry)
     local_path = [help_info_entry{9} 'rgb_cluster/'];
     load([local_path num2str(frame) '.mat']);
 end
-function save_results(metric_record, rgb, frame)
+function save_results(loss_record, rgb, frame, cubic_cluster)
     global path_mul
     imwrite(rgb, [path_mul 'rgb_image/' num2str(frame), '.png']);
     if frame == 1
-        f1 = fopen([path_mul 'rgb_image/' 'metric.txt'],'w');
+        f1 = fopen([path_mul 'rgb_image/' 'loss.txt'],'w');
+        f2 = fopen([path_mul 'rgb_image/' 'cubic_params.txt'],'w');
     else
-        f1 = fopen([path_mul 'rgb_image/' 'metric.txt'],'a');
+        f1 = fopen([path_mul 'rgb_image/' 'loss.txt'],'a');
+        f2 = fopen([path_mul 'rgb_image/' 'cubic_params.txt'],'a');
     end
-    print_matrix(f1, frame);
-    print_matrix(f1, metric_record);
+    print_matrix(f1, frame); print_matrix(f2, frame);
+    print_matrix(f1, loss_record');
+    for i = 1 : length(cubic_cluster)
+        params = generate_cubic_params(cubic_cluster{i}.cuboid);
+        params = [params cubic_cluster{i}.cuboid{1}.mh];
+        print_matrix(f2, params);
+    end
 end
-function rgb = render_image(rgb, cubic_cluster, data_cluster)
+
+function rgb = render_image(rgb, cubic_cluster, data_cluster, max_diff_rec)
     r = rgb(:,:,1); g = rgb(:,:,2); b = rgb(:,:,3);
+    max_diff_ratio_th = 0.7;
     for i = 1 : length(data_cluster)
         color = uint8(ceil(data_cluster{i}{end}.color * 255));
         r(data_cluster{i}{end}.linear_ind) = color(1);
@@ -137,12 +198,14 @@ function rgb = render_image(rgb, cubic_cluster, data_cluster)
     end
     rgb = cat(3, r, g, b);
     for i = 1 : length(data_cluster)
+        if max_diff_rec(i) > max_diff_ratio_th
+            continue;
+        end
         intrinsic_params = data_cluster{i}{end}.intrinsic_params;
         extrinsic_params = data_cluster{i}{end}.extrinsic_params * inv(data_cluster{i}{1}.affine_matrx);
         rgb = cubic_lines_of_2d(rgb, cubic_cluster{i}.cuboid, intrinsic_params, extrinsic_params);
     end
-end
-function [data_cluster, cubic_cluster] = optimize_cubic_shape_for_data_cluster(data_cluster, depth_cluster, cubic_cluster, frame)
+    
 end
 function ave_dist = metric2_single(cuboid, objs, depth_map_cluster)
     tot_dist = 0; tot_num = 0;
@@ -158,13 +221,14 @@ function [tot_dist, num] = get_dist_and_num_record(cuboid, pts_3d)
     [~, dist_record] = calculate_ave_distance(cuboid, pts_3d);
     num = length(dist_record); tot_dist = sum(dist_record);
 end
-function [loss, num_on_cubic] = metric_pos_and_inv(cuboid, objs, depth_cluster)
-    sample_num = 10; loss = 0; num_on_cubic = 0;
+function [loss, num_on_cubic, ratio_off_obj, max_diff] = metric_pos_and_inv(cuboid, objs, depth_cluster)
+    sample_num = 10; loss = 0; ratio_off_obj = 0; num_on_cubic = 0;
     sampled_pts = sample_cubic_by_num(cuboid, sample_num, sample_num);
     sz_depth_map = size(depth_cluster.depth_maps{1});
     theta = cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
     plane_param1 = cuboid{1}.params; plane_param2 = cuboid{2}.params;
     [tans_sign_mat1, tans_sign_mat2] = trans_mat_for_sign_judge(theta, xc, yc, l, w, h);
+    max_diff_rec = zeros(length(objs),1);
     for i = 1 : length(objs)
         z_mat = inv(objs{i}.intrinsic_params * (objs{i}.extrinsic_params * inv(objs{i}.affine_matrx)));
         % Find visible points approximately
@@ -183,11 +247,11 @@ function [loss, num_on_cubic] = metric_pos_and_inv(cuboid, objs, depth_cluster)
         linear_ind_pos = sub2ind(sz_depth_map, pts2d_pos(selector_pos,2), pts2d_pos(selector_pos,1)); ica = ismember(linear_ind_pos, objs{i}.linear_ind);
         selector_pos(selector_pos) = ica;
         loss_pos = sum(abs(depth_cluster.depth_maps{depth_map_ind}(linear_ind_pos(ica)) - depth_pos(selector_pos))) / length(linear_ind_pos);
-        % ratio_pos = sum(selector_pos) / length(selector_pos);
+        ratio_off_obj = ratio_off_obj + sum(selector_pos) / length(selector_pos);
         % Calculate metric inv
         [yy, xx] = ind2sub(sz_depth_map, objs{i}.linear_ind); pixel_loc = [xx yy];
         depth_inv = depth_cluster.depth_maps{depth_map_ind}(objs{i}.linear_ind);
-        [~, plane_type_rec, selector_inv, x11, x22, d1, d2] = get_plane_and_sign(l, w, pixel_loc, plane_param1, plane_param2, z_mat, tans_sign_mat1, tans_sign_mat2, objs{i}.extrinsic_params * inv(objs{1}.affine_matrx));
+        [xinv, plane_type_rec, selector_inv, x11, x22, d1, d2] = get_plane_and_sign(l, w, pixel_loc, plane_param1, plane_param2, z_mat, tans_sign_mat1, tans_sign_mat2, objs{i}.extrinsic_params * inv(objs{1}.affine_matrx));
         select_p1 = selector_inv; select_p1(select_p1) = ((x11(:,1) >= 0) & (plane_type_rec == 1));
         select_p2 = selector_inv; select_p2(select_p2) = ((x22(:,1) >= 0) & (plane_type_rec == 2));
         loss_inv = sum(abs(depth_inv(select_p1) - d1((x11(:,1) >= 0) & (plane_type_rec == 1)))) + ...
@@ -196,10 +260,22 @@ function [loss, num_on_cubic] = metric_pos_and_inv(cuboid, objs, depth_cluster)
         % ratio_inv = (sum(select_p1) + sum(select_p2)) / length(select_p1);
         num_on_cubic = num_on_cubic + sum(select_p1) + sum(select_p2);
         loss = loss + (loss_inv + loss_pos) / 2;
+        max_diff_rec(i) = max([
+            max((abs(depth_cluster.depth_maps{depth_map_ind}(linear_ind_pos(ica)) - depth_pos(selector_pos))) ./ depth_pos(selector_pos)),
+            max((abs(depth_inv(select_p1) - d1((x11(:,1) >= 0) & (plane_type_rec == 1)))) ./ depth_inv(select_p1)),
+            max((abs(depth_inv(select_p2) - d2((x22(:,1) >= 0) & (plane_type_rec == 2)))) ./ depth_inv(select_p2)),
+            ]);
+        % figure(1); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(xinv(:,1),xinv(:,2),xinv(:,3),3,'r','fill');
+        % hold on; scatter3(objs{i}.pts_new(:,1),objs{i}.pts_new(:,2),objs{i}.pts_new(:,3),3,'g','fill'); 
+        % hold on; scatter3(visible_pts(selector_pos,1),visible_pts(selector_pos,2),visible_pts(selector_pos,3),3,'b','fill'); 
+        % hold on; scatter3(objs{i}.pts_new(selector_inv,1),objs{i}.pts_new(selector_inv,2),objs{i}.pts_new(selector_inv,3),6,'b','fill'); 
+        % axis equal
     end
+    max_diff = max(max_diff_rec);
+    ratio_off_obj = ratio_off_obj / length(objs);
     loss = loss / length(objs);
 end
-function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
+function [best_cuboid_entry, loss_out, ratio_off_obj, max_diff] = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind)
     global path_mul
     % Make sure all the points are near the surface
     % Cut the cubic shape after the optimization
@@ -209,10 +285,12 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
     it_num = 200; loss_record = zeros(it_num, 1); 
     org_cubic_record_entry = cubic_record_entry;
     delta_record_norm = zeros(it_num, 1); num_on_pt_th = 0.15; min_loss = inf;
-    [loss_org, num_on_cubic_org] = metric_pos_and_inv(org_cubic_record_entry.cuboid, objs, depth_cluster);
+    [loss_org, num_on_cubic_org, num_off_obj_ratio_org, max_diff_org] = metric_pos_and_inv(org_cubic_record_entry.cuboid, objs, depth_cluster);
     [counts_set, linear_ind_set, inv_selector_set, isvalid] = get_useable_sample_for_obj_cluster(objs, depth_cluster_, cubic_record_entry.visible_pts, cubic_record_entry.cuboid);
     if ~isvalid
         best_cuboid_entry = truncate_cuboid(objs, depth_cluster, org_cubic_record_entry, activation_label, true); 
+        ratio_off_obj = num_off_obj_ratio_org;
+        loss_out = loss_org; max_diff = max_diff_org;
         % save_visualize(best_cuboid_entry, objs, 0, frame_num, obj_ind, inv_selector_set, counts_set);
         return
     end
@@ -244,16 +322,20 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
         
         cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label);
         if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-            % break;
+            break;
         end
     end
     best_cuboid_entry = truncate_cuboid(objs, depth_cluster, best_cuboid_entry, activation_label, false);
-    [loss_cur, num_on_cubic_cur] = metric_pos_and_inv(best_cuboid_entry.cuboid, objs, depth_cluster);
+    [loss_cur, num_on_cubic_cur, num_off_obj_ratio_new, max_diff_new] = metric_pos_and_inv(best_cuboid_entry.cuboid, objs, depth_cluster);
     % figure(2); clf; stem(loss_record(loss_record~=0))
     if (num_on_cubic_cur < num_on_cubic_org *(1 - num_on_pt_th)) || (loss_org < loss_cur)
         best_cuboid_entry = truncate_cuboid(objs, depth_cluster, org_cubic_record_entry, activation_label, true);
+        ratio_off_obj = num_off_obj_ratio_org;
+        loss_out = loss_org; max_diff = max_diff_org;
         % save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
     else
+        ratio_off_obj = num_off_obj_ratio_new;
+        loss_out = loss_cur; max_diff = max_diff_new;
         % save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
         % save_stem(loss_record(loss_record ~= 0), frame_num, obj_ind);
     end
@@ -320,11 +402,11 @@ end
 function save_visualize(cubic_record_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set)
     global path_mul
     if mod(it_num, 0) ~= -1
-        % figure('visible', 'off'); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
-        figure(1); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
+        figure('visible', 'off'); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
+        % figure(1); clf; draw_cubic_shape_frame(cubic_record_entry.cuboid); hold on;
         pts_cubic = cubic_record_entry.visible_pts;
         
-        for i = 1 : length(objs)
+        for i = 1 : 3 : length(objs)
             valid_3d = counts_set(i,:);
             scatter3(pts_cubic(valid_3d,1), pts_cubic(valid_3d,2), pts_cubic(valid_3d,3), 3, 'r', 'fill'); hold on;
             pts = objs{i}.pts_new; selector = inv_selector_set{i};
@@ -495,9 +577,6 @@ function cuboid_entry = truncate_cuboid(objs, depth_cluster, cuboid_entry, activ
         end
         try
             limit_mh_re(i) = hh(floor(length(hh) * border_ratio_minus_h));
-            if limit_mh_re(i) > 0
-                limit_mh_re(i) = 0;
-            end
         catch
             limit_mh_re(i) = 0;
         end
@@ -857,11 +936,20 @@ function sampled_pts = acquire_visible_sampled_points(cuboid, intrinsic_params, 
     % visible_label = find_visible_pt_global({cuboid}, sampled_pts(:, 1:3), intrinsic_params, extrinsic_params);
     sampled_pts = sampled_pts(visible_label, :);
 end
+
 function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
     % color = uint8(randi([1 255], [1 3]));
     % color = rand([1 3]);
     shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'Custom');
-    pts3d = zeros(8,4); mh = cubic{1}.mh;
+    pts3d = zeros(8,4); max_bottom_height = 10;
+    try
+        mh = cubic{1}.mh;
+        if mh > max_bottom_height
+            mh = 0;
+        end
+    catch
+        mh = 0;
+    end
     for i = 1 : 4
         pts3d(i, :) = [cubic{i}.pts(1, :) 1];
         pts3d(i, 3) = pts3d(i, 3) + mh;
@@ -890,7 +978,8 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
 end
 function cuboid = generate_center_cuboid_by_params(params)
     theta = params(1); xc = params(2); yc = params(3); l = params(4); w = params(5); h = params(6);
-    cuboid = generate_cuboid_by_center(xc, yc, theta, l, w, h);
+    cuboid = generate_cuboid_by_center_(xc, yc, theta, l, w, h);
+    % cuboid = generate_cuboid_by_center(xc, yc, theta, l, w, h);
 end
 function alternate_cuboids = transfer_cuboid(cuboid)
     alternate_cuboids = cell(4,1);

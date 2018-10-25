@@ -23,7 +23,8 @@ function visible_pt_label = find_visible_pt_global_(cubics, pts_3d, intrinsic_pa
     end
     
     candidate = (aff * [possible_pts(:,1:2) possible_pts(:,4)]')';
-    pre_re = ((abs(abs(candidate(:,1)) - l/2) <  th ) & (abs(candidate(:,2)) < w/2)) | ((abs(abs(candidate(:,2)) - w/2) <  th ) & (abs(candidate(:,1)) < l/2));
+    pre_re = ((abs(abs(candidate(:,1)) - l/2) <  th ) & (abs(candidate(:,2)) < w/2)) | ((abs(abs(candidate(:,2)) - w/2) <  th ) & (abs(candidate(:,1)) < l/2)) | ...
+             ((abs(abs(candidate(:,1))) <  th ) & (abs(candidate(:,2)) < w/2)) | ((abs(abs(candidate(:,2))) <  th ) & (abs(candidate(:,1)) < l/2));
     pre_re = pre_re & (possible_pts(:,3) < h);
     dist = ones(num_pt * 4, 1) * inf; dist(pre_re) = sum((possible_pts(pre_re, 1:3) - repmat(cam_origin(1:3)', [sum(pre_re), 1])).^2, 2);
     dist = reshape(dist, [num_pt, 4]); [~, ii] = min(dist, [], 2); selector = (min(dist, [], 2) ~= inf); x_row = 1 : size(dist, 1); linear_ind = sub2ind(size(dist), x_row(selector)', ii(selector));
