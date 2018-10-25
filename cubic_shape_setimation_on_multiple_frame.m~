@@ -34,8 +34,8 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
         for frame = 1 : max_frame
-            save([path_mul num2str(frame) '.mat'])
-            % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/25_Oct_2018_17_mul/7.mat')
+            % save([path_mul num2str(frame) '.mat'])
+            load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/25_Oct_2018_17_mul/7.mat')
             % Prepare data
             % label = read_in_type_map(help_info{jj}, frame);
             rgb = grab_rgb_by_mat(frame, help_info{jj});
@@ -263,10 +263,18 @@ function [loss, num_on_cubic, ratio_off_obj, max_diff] = metric_pos_and_inv(cubo
         val1 = max((abs(depth_cluster.depth_maps{depth_map_ind}(linear_ind_pos(ica)) - depth_pos(selector_pos))) ./ depth_pos(selector_pos));
         val2 = max((abs(depth_inv(select_p1) - d1((x11(:,1) >= 0) & (plane_type_rec == 1)))) ./ depth_inv(select_p1));
         val3 = max((abs(depth_inv(select_p2) - d2((x22(:,1) >= 0) & (plane_type_rec == 2)))) ./ depth_inv(select_p2));
+        num_vals = 
+        
         try 
-            max_diff_rec(i) = max([val1,val2,val3]);
+            max_diff_rec = max([val1,val2,val3])
+        try
+            max_diff_rec(i) = max([
+                ,
+                ,
+                ,
+                ]);
         catch
-            max_diff_rec(i) = 0;
+            a = 1;
         end
         % figure(1); clf; draw_cubic_shape_frame(cuboid); hold on; scatter3(xinv(:,1),xinv(:,2),xinv(:,3),3,'r','fill');
         % hold on; scatter3(objs{i}.pts_new(:,1),objs{i}.pts_new(:,2),objs{i}.pts_new(:,3),3,'g','fill'); 
@@ -275,9 +283,6 @@ function [loss, num_on_cubic, ratio_off_obj, max_diff] = metric_pos_and_inv(cubo
         % axis equal
     end
     max_diff = max(max_diff_rec);
-    if max_diff == 0
-        max_diff = inf;
-    end
     ratio_off_obj = ratio_off_obj / length(objs);
     loss = loss / length(objs);
 end
