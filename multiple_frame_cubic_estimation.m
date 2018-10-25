@@ -15,7 +15,9 @@ function [sum_diff, sum_hess, sum_loss, dominate_pts, dominate_color] = multiple
     z_mat = inv(intrinsic_param * extrinsic_param);
     M = intrinsic_param * extrinsic_param;
     plane_param1 = cuboid{1}.params; plane_param2 = cuboid{2}.params;
-    ratio_regularization = 100000; sigmoid_m = 10; sigmoid_bias = 4;
+    ratio_regularization = 100000; 
+    % ratio_regularization = 300000; 
+    sigmoid_m = 10; sigmoid_bias = 4;
     sz_depth_map = size(depth_map);
     
     

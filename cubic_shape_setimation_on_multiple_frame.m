@@ -1,5 +1,5 @@
 function cubic_shape_setimation_on_multiple_frame(help_info)
-    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/24_Oct_2018_13_mul/1_60.mat');
+    % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/24_Oct_2018_15_mul/3_70.mat');
     % cubic_record_entry = optimize_for_single_obj_set(cubic_record_entry, objs, depth_cluster, frame_num, obj_ind);
     %{
     rgb = grab_rgb_by_mat(1, help_info{1});
@@ -33,7 +33,7 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : max_frame
+        for frame = 1 : 5
             save([path_mul num2str(frame) '.mat'])
             % Prepare data
             rgb = grab_rgb_by_mat(frame, help_info{jj});
@@ -52,7 +52,7 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
             % Visualize results and save
             rgb = render_image(rgb, cubic_cluster, data_cluster);
             metric_record = 1; save_results(metric_record, rgb, frame);
-            render_in_3d(data_cluster, cubic_cluster, frame);
+            % render_in_3d(data_cluster, cubic_cluster, frame);
             % draw_and_check_r1esults(data_cluster, cubic_cluster, frame)
         end
     end
@@ -213,7 +213,7 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
     [counts_set, linear_ind_set, inv_selector_set, isvalid] = get_useable_sample_for_obj_cluster(objs, depth_cluster_, cubic_record_entry.visible_pts, cubic_record_entry.cuboid);
     if ~isvalid
         best_cuboid_entry = truncate_cuboid(objs, depth_cluster, org_cubic_record_entry, activation_label, true); 
-        save_visualize(best_cuboid_entry, objs, 0, frame_num, obj_ind, inv_selector_set, counts_set);
+        % save_visualize(best_cuboid_entry, objs, 0, frame_num, obj_ind, inv_selector_set, counts_set);
         return
     end
     for i = 1 : it_num
@@ -244,11 +244,12 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
         
         cubic_record_entry = update_cuboid_entry(cubic_record_entry, delta_theta, activation_label);
         if judge_stop(delta_theta, cubic_record_entry.cuboid, loss_record, delta_record_norm)
-            break;
+            % break;
         end
     end
     best_cuboid_entry = truncate_cuboid(objs, depth_cluster, best_cuboid_entry, activation_label, false);
     [loss_cur, num_on_cubic_cur] = metric_pos_and_inv(best_cuboid_entry.cuboid, objs, depth_cluster);
+    % figure(2); clf; stem(loss_record(loss_record~=0))
     if (num_on_cubic_cur < num_on_cubic_org *(1 - num_on_pt_th)) || (loss_org < loss_cur)
         best_cuboid_entry = truncate_cuboid(objs, depth_cluster, org_cubic_record_entry, activation_label, true);
         % save_visualize(best_cuboid_entry, objs, it_num, frame_num, obj_ind, inv_selector_set, counts_set);
@@ -258,7 +259,7 @@ function best_cuboid_entry = optimize_for_single_obj_set(cubic_record_entry, obj
     end
 end
 function depth_map_cluster = image_blur(depth_map_cluster)
-    for i = 1 : length(depth_map_cluster)
+    for i = 1 : length(depth_map_cluster.depth_maps)
         depth_map_cluster.depth_maps{i} = imgaussfilt(depth_map_cluster.depth_maps{i},'FilterSize',3);
     end
 end
@@ -435,7 +436,7 @@ function [diff, hess, loss] = accum_for_one_obj(cuboid, cur_obj, depth_map, visi
     % linear_ind = down_sample_linear_ind(linear_ind, tot_pos_num);
     visible_pt_3d = [visible_pt_3d(:, 5) visible_pt_3d(:, 6) visible_pt_3d(:, 4)];
     extrinsic_param = cur_obj.extrinsic_params * inv(cur_obj.affine_matrx); intrinsic_param = cur_obj.intrinsic_params;
-    [diff_, hess_, loss_] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label);
+    % [diff_, hess_, loss_] = analytical_gradient_combined_v2_mult_frame(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label);
     [diff, hess, loss] = multiple_frame_cubic_estimation(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pt_3d, activation_label);
     % visualize_combine_multi(cuboid, intrinsic_param, extrinsic_param, depth_map, linear_ind, visible_pts, activation_label);
 end
@@ -459,7 +460,7 @@ function cuboid_entry = truncate_cuboid(objs, depth_cluster, cuboid_entry, activ
     theta = cuboid{1}.theta; l = cuboid{1}.length1; w = cuboid{2}.length1; h = cuboid{1}.length2; center = mean(cuboid{5}.pts); xc = center(1); yc = center(2);
     plane_param1 = cuboid{1}.params; plane_param2 = cuboid{2}.params;
     [tans_sign_mat1, tans_sign_mat2] = trans_mat_for_sign_judge(theta, xc, yc, l, w, h);
-    border_ratio = 0.95; border_ratio_h = 0.98; border_ratio_minus_h = 0.01; 
+    border_ratio = 0.97; border_ratio_h = 0.98; border_ratio_minus_h = 0.01; 
     limit_l_re = zeros(length(objs), 1); limit_w_re = zeros(length(objs), 1); limit_h_re = zeros(length(objs), 1); limit_mh_re = zeros(length(objs), 1);
     sz_depth_map = size(depth_cluster.depth_maps{1});
     for i = 1 : length(objs)
