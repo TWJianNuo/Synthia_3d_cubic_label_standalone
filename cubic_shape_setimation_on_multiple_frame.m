@@ -33,9 +33,9 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
     for jj = 1 : length(help_info)
         [base_path, GT_Depth_path, GT_seg_path, GT_RGB_path, GT_Color_Label_path, cam_para_path, max_frame, save_path, inter_path] = read_helper_info(help_info, jj);
         cubic_cluster = zeros(0); make_dir(help_info{jj});
-        for frame = 1 : max_frame
-            save([path_mul num2str(frame) '.mat'])
-            % load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/25_Oct_2018_17_mul/7.mat')
+        for frame = 15 : max_frame
+            % save([path_mul num2str(frame) '.mat'])
+            load('/home/ray/ShengjieZhu/Fall Semester/depth_detection_project/Synthia_3D_scenen_reconstruction_standalone/output_results/SYNTHIA-SEQS-05-SPRING/25_Oct_2018_17_mul/104.mat')
             % Prepare data
             % label = read_in_type_map(help_info{jj}, frame);
             rgb = grab_rgb_by_mat(frame, help_info{jj});
@@ -70,7 +70,7 @@ function cubic_shape_setimation_on_multiple_frame(help_info)
             
             ratio_off_obj_rec = zeros(length(data_cluster),1); loss_record = zeros(length(data_cluster),1); max_diff_rec = zeros(length(data_cluster),1);
             for i = 1 : length(data_cluster)
-                [cubic_cluster{i}, ratio_off_obj_rec(i), loss_record(i), max_diff_rec(i)] = optimize_for_single_obj_set(cubic_cluster{i}, data_cluster{i}(valid_frame), depth_cluster, frame, i);
+                [cubic_cluster{i}, ratio_off_obj_rec(i), loss_record(i), max_diff_rec(i)] = optimize_for_single_obj_set(cubic_cluster{i}, data_cluster{i}, depth_cluster, frame, i);
             end
             % check_projection(cubic_cluster, data_cluster, rgb, ratio_off_obj_rec, loss_record, max_diff_rec)
             % Visualize results and save
