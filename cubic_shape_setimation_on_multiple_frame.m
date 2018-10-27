@@ -947,7 +947,7 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
     % color = uint8(randi([1 255], [1 3]));
     % color = rand([1 3]);
     shapeInserter = vision.ShapeInserter('Shape', 'Lines', 'BorderColor', 'Custom');
-    pts3d = zeros(8,4); max_bottom_height = 10;
+    pts3d = zeros(8,4); max_bottom_height = 10; depth_th = 0.3;
     try
         mh = cubic{1}.mh;
         if mh > max_bottom_height
@@ -962,6 +962,10 @@ function img = cubic_lines_of_2d(img, cubic, intrinsic_params, extrinsic_params)
     end
     for i = 5 : 8
         pts3d(i, :) = [cubic{5}.pts(i - 4, :) 1];
+    end
+    pts_bot = (extrinsic_params * [pts3d(:, 1:3) ones(size(pts3d,1),1)]')';
+    if min(pts_bot(:,3)) < depth_th
+        return;
     end
     pts2d = (intrinsic_params * extrinsic_params * [pts3d(:, 1:3) ones(size(pts3d,1),1)]')';
     depth = pts2d(:,3);
